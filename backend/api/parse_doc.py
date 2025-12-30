@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import Dict, List, Optional
-import ollama
-from pydantic import BaseModel, field_validator, ConfigDict
+# import ollama
+from pydantic import BaseModel
 import asyncio
 from dataclasses import dataclass
 import re
@@ -54,16 +54,16 @@ Return JSON with your findings:
 Return only valid JSON, no other text.
 """
 
-        response = ollama.generate(
-            model=self.model,
-            prompt=prompt,
-            stream= False,
-            options={
-                "temperature": 0.1,  # Low temp for consistent patterns
-                "num_predict": 3000
-            }
-        )
-        return response
+        # response = ollama.generate(
+        #     model=self.model,
+        #     prompt=prompt,
+        #     stream= False,
+        #     options={
+        #         "temperature": 0.1,  # Low temp for consistent patterns
+        #         "num_predict": 3000
+        #     }
+        # )
+        # return response
 
 
 sample_exam_text = """
@@ -108,9 +108,10 @@ house prices in Linz.
 --- END OF EXAM ---
 Viel Erfolg!
 """
-agent = PatternLearner()
-result = agent.learn_patterns(sample_exam_text)
-output = result['response']
+# agent = PatternLearner()
+# result = agent.learn_patterns(sample_exam_text[100:200])
+# output = result['response']
+# print (output)
 
 class SubPart(BaseModel):
     letter : str 

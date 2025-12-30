@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from parse_doc import router as parse_doc_router
+from file_upload import router as file_upload_router
 
 app = FastAPI(title="Syllabix", version="1.0.0")
 
@@ -13,11 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(parse_doc_router)
-app.include_router(finetune_router)
-app.include_router(fileupload_router)
-app.include_router(process_doc_router)
-app.include_router(model_router)
-app.include_router(model_list_router)
+app.include_router(file_upload_router)
 
 
 @app.get("/")
