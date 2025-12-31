@@ -14,6 +14,7 @@ from enum import Enum
 import asyncio
 from datetime import datetime
 import json
+from parse_doc import PatternLearner, QuestionParser, parse_pattern_response
 
 router = APIRouter()
 
@@ -30,6 +31,7 @@ class ProcessingStage(str, Enum):
     PENDING = "pending"
     READING_FILES = "reading_files"
     EXTRACTING_PAGES = "extracting_pages"
+    PARSING_QUESTIONS = "parsing_questions"
     STRUCTURING = "structuring"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -200,6 +202,89 @@ async def process_files_async(file_paths: List[Path], job_id: str):
                 raise
         
         status.processed_files = len(file_paths)
+        status.stage = ProcessingStage.PARSING_QUESTIONS
+        status.updated_at = datetime.now()
+        
+        await send_progress_update(job_id, {
+            "type": "stage_change",
+            "stage": "parsing_questions",
+            "total_files": len(file_paths)
+        })
+        
+        parsed_questions_data = []
+        
+        for idx, markdown_item in enumerate(all_markdown):
+            await send_progress_update(job_id, {
+                "type": "parsing_progress",
+                "current_file": markdown_item["filename"],
+                "processed_files": idx,
+                "total_files": len(all_markdown)
+            })
+            
+            try:
+                markdown_file_path = Path(markdown_item["output_file"])
+                if markdown_file_path.exists():
+                    async with aiofiles.open(markdown_file_path, 'r', encoding='utf-8') as f:
+                        exam_text = await f.read()
+                    
+                    if exam_text.strip():
+                        sample_text = exam_text[:2000] if len(exam_text) > 2000 else exam_text
+                        
+                        await send_progress_update(job_id, {
+                            "type": "parsing_status",
+                            "status": "learning_patterns",
+                            "current_file": markdown_item["filename"]
+                        })
+                        
+                        loop = asyncio.get_event_loop()
+                        pattern_learner = PatternLearner()
+                        pattern_result = await loop.run_in_executor(
+                            None, 
+                            pattern_learner.learn_patterns, 
+                            sample_text
+                        )
+                        parsed_patterns = parse_pattern_response(pattern_result['response'])
+                        
+                        await send_progress_update(job_id, {
+                            "type": "parsing_status",
+                            "status": "extracting_questions",
+                            "current_file": markdown_item["filename"]
+                        })
+                        
+                        parser = QuestionParser(parsed_patterns)
+                        questions = await loop.run_in_executor(
+                            None,
+                            parser.parse_questions,
+                            exam_text
+                        )
+                        
+                        questions_json = [q.model_dump() for q in questions]
+                        
+                        parsed_output_path = OUTPUT_DIR / f"{markdown_item['file_id']}_parsed.json"
+                        async with aiofiles.open(parsed_output_path, 'w', encoding='utf-8') as f:
+                            await f.write(json.dumps(questions_json, indent=2, ensure_ascii=False))
+                        
+                        parsed_questions_data.append({
+                            "file_id": markdown_item["file_id"],
+                            "filename": markdown_item["filename"],
+                            "questions_count": len(questions),
+                            "parsed_output": str(parsed_output_path),
+                            "markdown_output": markdown_item["output_file"]
+                        })
+            except Exception as e:
+                await send_progress_update(job_id, {
+                    "type": "parsing_warning",
+                    "warning": f"Failed to parse {markdown_item['filename']}: {str(e)}",
+                    "current_file": markdown_item["filename"]
+                })
+                parsed_questions_data.append({
+                    "file_id": markdown_item["file_id"],
+                    "filename": markdown_item["filename"],
+                    "questions_count": 0,
+                    "error": str(e),
+                    "markdown_output": markdown_item["output_file"]
+                })
+        
         status.stage = ProcessingStage.STRUCTURING
         status.updated_at = datetime.now()
         
@@ -218,7 +303,10 @@ async def process_files_async(file_paths: List[Path], job_id: str):
             "stage": "completed"
         })
         
-        return all_markdown
+        return {
+            "markdown_files": all_markdown,
+            "parsed_questions": parsed_questions_data
+        }
     except Exception as e:
         if job_id in processing_jobs:
             status.stage = ProcessingStage.FAILED

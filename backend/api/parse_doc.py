@@ -1,11 +1,3 @@
-<<<<<<< Updated upstream
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from typing import Dict, List, Optional
-# import ollama
-from pydantic import BaseModel
-import asyncio
-from dataclasses import dataclass
-=======
 """
 Document parsing module for extracting structured questions from exam documents.
 
@@ -19,7 +11,6 @@ from fastapi import APIRouter
 from typing import List, Optional
 import ollama
 from pydantic import BaseModel, field_validator, ConfigDict
->>>>>>> Stashed changes
 import re
 import json
 
@@ -93,18 +84,6 @@ Output this JSON:
 Return ONLY valid JSON.
 """
 
-<<<<<<< Updated upstream
-        # response = ollama.generate(
-        #     model=self.model,
-        #     prompt=prompt,
-        #     stream= False,
-        #     options={
-        #         "temperature": 0.1,  # Low temp for consistent patterns
-        #         "num_predict": 3000
-        #     }
-        # )
-        # return response
-=======
         response = ollama.generate(
             model=self.model,
             prompt=prompt,
@@ -115,7 +94,6 @@ Return ONLY valid JSON.
             }
         )
         return response
->>>>>>> Stashed changes
 
 
 class SubPart(BaseModel):
@@ -171,7 +149,6 @@ class PatternLearning(BaseModel):
                 try:
                     re.compile(pattern)
                 except re.error as e:
-                    # Pattern validation failed - allow it but could log
                     pass
         return v
 
@@ -190,12 +167,10 @@ def parse_pattern_response(response_text: str) -> PatternLearning:
         json.JSONDecodeError: If response is not valid JSON
         ValueError: If response doesn't match expected schema
     """
-    # Extract JSON from markdown code blocks if present
     json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
     if json_match:
         response_text = json_match.group(1)
 
-    # Parse and validate
     data = json.loads(response_text)
     return PatternLearning(**data)
 
@@ -305,7 +280,6 @@ class QuestionParser:
                         print(f"  Marks: {marks_value}")
                     return marks_value
         except Exception:
-            # Silently fail - marks are optional
             pass
 
         return None
@@ -347,7 +321,6 @@ class QuestionParser:
                 print(f"  Sub-parts: {len(sub_parts)}")
 
         except Exception:
-            # Silently fail - sub-parts are optional
             pass
 
         return sub_parts
@@ -373,24 +346,20 @@ class QuestionParser:
         """
         text = block[len(q_marker):].strip()
 
-        # Remove sub-parts section
         if sub_parts:
             first_sub = sub_parts[0].letter
             sub_pos = block.find(first_sub)
             if sub_pos != -1:
                 text = block[len(q_marker):sub_pos].strip()
 
-        # Remove marks indicator
         if marks_pattern and marks_pattern != ".*":
             text = re.sub(marks_pattern, '', text)
 
-        # Normalize whitespace
         text = ' '.join(text.split())
 
         return text
 
 
-# Sample exam text for testing
 SAMPLE_EXAM_TEXT = """
 Johannes Kepler Universität Linz
 Institut für Machine Learning
@@ -433,13 +402,6 @@ house prices in Linz.
 --- END OF EXAM ---
 Viel Erfolg!
 """
-<<<<<<< Updated upstream
-# agent = PatternLearner()
-# result = agent.learn_patterns(sample_exam_text[100:200])
-# output = result['response']
-# print (output)
-=======
->>>>>>> Stashed changes
 
 
 def main():
