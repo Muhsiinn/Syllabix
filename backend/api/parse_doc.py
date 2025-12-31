@@ -1,20 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import Dict, List, Optional
 import ollama
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, ConfigDict
 import asyncio
 from dataclasses import dataclass
 import re
 import json
 router = APIRouter()
 
-
-class QuestionPattern(BaseModel):
-    pattern_type: str  
-    regex_pattern: str
-    example_matches: List[str]
-    confidence: float
-    metadata: Dict 
 
 class PatternLearner:
 
@@ -24,53 +17,41 @@ class PatternLearner:
     def learn_patterns(self,query:str):
 
         prompt = f"""
-You are a pattern recognition expert for exam papers. Analyze this sample text and identify the structural patterns used for questions.
+You are analyzing exam question formatting patterns.
 
-SAMPLE TEXT:
+EXAM SAMPLE:
 {query}
 
-TASK:
-1. Identify how questions are numbered/formatted (e.g., "Q1.", "1)", "Question 1:", etc.)
-2. Identify how marks are indicated (e.g., "[5 marks]", "(10)", "Marks: 5")
-3. Identify question type markers (MCQ options like a), b), c) or multi-part questions like a., b., c.)
-4. Return regex patterns that can extract these reliably
+YOUR TASK:
+Examine this text carefully and discover:
+1. How are questions numbered? Look at the actual format used.
+2. Where are marks indicated? Look at the exact syntax.
+3. Are there sub-parts? What format do they use?
 
-IMPORTANT: The regex must work for ALL questions in this format, not just the samples you see.
+Think step-by-step:
+- First, list what you observe about the structure
+- Then, create regex patterns that match what you found
+- Test mentally: would your regex work on similar questions?
 
-Return ONLY valid JSON in this exact format:
+Return JSON with your findings:
 {{
-  "patterns": [
-    {{
-      "pattern_type": "main_question",
-      "regex_pattern": "Q\\d+\\.\\s+(.+?)(?=Q\\d+\\.|$)",
-      "description": "Matches Q1. Q2. format",
-      "example_matches": ["Q1. What is AI?", "Q2. Explain ML"],
-      "confidence": 0.95
-    }},
-    {{
-      "pattern_type": "marks",
-      "regex_pattern": "\\[(\\d+)\\s*marks?\\]",
-      "description": "Matches [5 marks] or [5 mark]",
-      "example_matches": ["[5 marks]", "[10 marks]"],
-      "confidence": 0.90
-    }},
-    {{
-      "pattern_type": "sub_question",
-      "regex_pattern": "[a-z]\\)\\s+(.+?)(?=[a-z]\\)|$)",
-      "description": "Matches a) b) c) format for sub-questions",
-      "example_matches": ["a) Define supervised learning", "b) Explain the concept"],
-      "confidence": 0.85
-    }}
-  ],
-  "document_structure": {{
-    "has_subsections": true,
-    "section_markers": ["Section A", "Section B"],
-    "total_questions_estimate": 10,
-    "question_numbering_system": "numeric"
+  "observations": {{
+    "question_format": "describe what you see",
+    "marks_format": "describe what you see",
+    "subparts_format": "describe what you see"
+  }},
+  "regex_patterns": {{
+    "main_question": "your regex here",
+    "marks": "your regex here",
+    "sub_question": "your regex here"
+  }},
+  "test_examples": {{
+    "what_matches": ["example 1", "example 2"],
+    "edge_cases": ["tricky case you noticed"]
   }}
 }}
 
-Do not include any explanatory text, ONLY the JSON.
+Return only valid JSON, no other text.
 """
 
         response = ollama.generate(
@@ -128,8 +109,93 @@ house prices in Linz.
 Viel Erfolg!
 """
 agent = PatternLearner()
-result = agent.learn_patterns(sample_exam_text[100:200])
+result = agent.learn_patterns(sample_exam_text)
 output = result['response']
-print (output)
 
+class SubPart(BaseModel):
+    letter : str 
+    number : str
 
+class ExtractedQuestion(BaseModel):
+    question_number : str
+    question_text : str 
+    marks : Optional[int] = None
+    sub_parts : List[SubPart] = []
+    raw_block : Optional[str] = None
+
+class RegexPatterns(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    main_question : str 
+    marks :str 
+    sub_question : str 
+
+    
+  
+
+class Observations(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    question_format : str 
+    marks_format : str 
+    subparts_format : str 
+
+    
+class TestExamples(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    
+    what_matches: List[str] = []
+    edge_cases: List[str] = []
+
+class PatternLearning(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    observations: Observations
+    regex_patterns: RegexPatterns
+    test_examples: TestExamples
+
+    @field_validator('regex_patterns', mode='before')
+    @classmethod
+    def validate_regex(cls, v):
+        """Validate that regex patterns are valid"""
+        if isinstance(v, dict):
+            for key, pattern in v.items():
+                try:
+                    re.compile(pattern)
+                except re.error as e:
+                    print(f"Warning: Invalid regex for {key}: {pattern} - {e}")
+        return v
+llm_output = {
+    "observations": {
+        "question_format": "Questions are numbered using uppercase letters (NG) followed by a space and lowercase letters (final exam).",
+        "marks_format": "Marks are indicated as 'Punkte' followed by the total points in numerals.",
+        "subparts_format": "Sub-parts are not explicitly defined in this sample, but they might be identified by indentation or specific keywords."
+    },
+    "regex_patterns": {
+        "main_question": "^[A-Z]+ [a-z]+ [A-Z]+",
+        "marks": "Punkte \\d+",
+        "sub_question": "(?s)(?:\\n\\t| )[a-z]+\\s*\\d+"
+    },
+    "test_examples": {
+        "what_matches": ["A1 Punkte 20", "\tB3 Punkte 30"],
+        "edge_cases": ["NG Prüfungsdauer: 120 Minuten Gesamtpunkte: 100"]
+    }
+}
+def fix_regex_escapes(json_string: str) -> str:
+    fixed = json_string.replace('\\', '\\\\')
+    return fixed
+
+# Parse it with Pydantic
+try:
+    # Fix the escapes first
+    fixed_output = fix_regex_escapes(output)
+    
+    # Then parse
+    data = json.loads(fixed_output)
+    parsed = PatternLearning(**data)
+    
+    print("Successfully parsed!")
+    print(f"Main question pattern: {parsed.regex_patterns.main_question}")
+    
+except json.JSONDecodeError as e:
+    print(f"JSON error: {e}")
+    print(f"Position {e.pos}: ...{output[max(0, e.pos-50):e.pos+50]}...")
+except Exception as e:
+    print(f"Error: {e}")
