@@ -15,6 +15,8 @@ interface StreamUpdate {
   processed_files?: number
   total_files?: number
   error?: string
+  status?: string
+  warning?: string
 }
 
 interface ProcessingState {
@@ -26,6 +28,8 @@ interface ProcessingState {
   current_file: string | null
   current_page: number
   error: string | null
+  parsing_status: string | null
+  parsing_file: string | null
 }
 
 export default function ProcessingPage() {
@@ -41,6 +45,8 @@ export default function ProcessingPage() {
     current_file: null,
     current_page: 0,
     error: null,
+    parsing_status: null,
+    parsing_file: null,
   })
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -90,6 +96,24 @@ export default function ProcessingPage() {
             current_page: update.current_page !== undefined ? update.current_page : prev.current_page,
             current_file: update.current_file || prev.current_file,
           }))
+        } else if (update.type === 'parsing_progress') {
+          setState((prev) => ({
+            ...prev,
+            processed_files: update.processed_files !== undefined ? update.processed_files : prev.processed_files,
+            total_files: update.total_files !== undefined ? update.total_files : prev.total_files,
+            parsing_file: update.current_file || null,
+          }))
+        } else if (update.type === 'parsing_status') {
+          setState((prev) => ({
+            ...prev,
+            parsing_status: update.status || null,
+            parsing_file: update.current_file || prev.parsing_file,
+          }))
+        } else if (update.type === 'parsing_warning') {
+          setState((prev) => ({
+            ...prev,
+            parsing_file: update.current_file || prev.parsing_file,
+          }))
         } else if (update.type === 'error') {
           setState((prev) => ({
             ...prev,
@@ -120,13 +144,31 @@ export default function ProcessingPage() {
   }, [jobId])
 
   const getStageStatus = (stage: string) => {
-    const stages = ['reading_files', 'extracting_pages', 'structuring']
+    const stages = ['reading_files', 'extracting_pages', 'parsing_questions', 'structuring']
     const currentIndex = stages.indexOf(state.stage)
     const targetIndex = stages.indexOf(stage)
 
     if (targetIndex < currentIndex) return 'completed'
     if (targetIndex === currentIndex) return 'active'
     return 'pending'
+  }
+
+  const getParsingDetail = () => {
+    if (state.parsing_status === 'learning_patterns') {
+      return 'Analyzing question patterns...'
+    } else if (state.parsing_status === 'extracting_questions') {
+      return 'Extracting structured questions...'
+    } else if (state.parsing_file) {
+      return `Processing ${state.parsing_file}`
+    }
+    return 'Preparing to parse questions...'
+  }
+
+  const getParsingProgress = () => {
+    if (state.total_files > 0 && state.processed_files >= 0) {
+      return (state.processed_files / state.total_files) * 100
+    }
+    return 0
   }
 
   return (
@@ -168,6 +210,14 @@ export default function ProcessingPage() {
             currentPage={state.current_page}
             totalPages={state.total_pages}
             currentFile={state.current_file}
+          />
+
+          <ProgressStep
+            title="Parsing questions"
+            status={getStageStatus('parsing_questions')}
+            detail={getParsingDetail()}
+            progress={getParsingProgress()}
+            currentFile={state.parsing_file || state.current_file}
           />
 
           <ProgressStep
