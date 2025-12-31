@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(D:/model/ai-companion/venv/Scripts/python.exe:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
